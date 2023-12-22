@@ -1,0 +1,15 @@
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+    - go~1.21
+
+entrypoint: 
+  command: go
+
+archs:
+- aarch64
+- amd64
