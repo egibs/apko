@@ -15,6 +15,7 @@
 package fs
 
 import (
+	"archive/tar"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -57,6 +58,28 @@ func WithCreateDir() DirFSOption {
 		opts.mkdir = true
 		return nil
 	}
+}
+
+// getOwnership extracts UID and GID from fs.FileInfo.Sys()
+func getOwnership(fi fs.FileInfo) (uid, gid int, ok bool) {
+	sys := fi.Sys()
+	if sys == nil {
+		return 0, 0, false
+	}
+
+	if st, ok := sys.(*syscall.Stat_t); ok {
+		return int(st.Uid), int(st.Gid), true
+	}
+
+	if st, ok := sys.(*unix.Stat_t); ok {
+		return int(st.Uid), int(st.Gid), true
+	}
+
+	if st, ok := sys.(*tar.Header); ok {
+		return int(st.Uid), int(st.Gid), true
+	}
+
+	return 0, 0, false
 }
 
 func DirFS(dir string, opts ...DirFSOption) FullFS {
@@ -143,6 +166,9 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 		}
 		mode := fi.Mode()
 		perm := mode.Perm()
+
+		uid, gid, hasOwnership := getOwnership(fi)
+
 		switch mode.Type() {
 		case fs.ModeDir:
 			fullPerm := os.ModeDir | perm
@@ -174,6 +200,14 @@ func DirFS(dir string, opts ...DirFSOption) FullFS {
 				_ = memFile.Close()
 			}
 		}
+
+		if err == nil && hasOwnership {
+			if chownErr := f.overrides.Chown(path, uid, gid); chownErr != nil {
+				log.Warn("failed to preserve ownership in memory overlay",
+					"path", path, "uid", uid, "gid", gid, "error", chownErr)
+			}
+		}
+
 		return err
 	})
 
